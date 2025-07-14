@@ -406,7 +406,7 @@ where
 		function: ExportedFunction,
 		input_data: Vec<u8>,
 	) -> ExecResult {
-		let prepared_call = self.prepare_call(Runtime::new(ext, input_data), function, 0)?;
+		let prepared_call = self.prepare_call(Runtime::new(ext, input_data), function, 4096)?;
 		prepared_call.call()
 	}
 

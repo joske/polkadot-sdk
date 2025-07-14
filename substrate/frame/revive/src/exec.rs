@@ -57,6 +57,9 @@ use sp_runtime::{
 	DispatchError, SaturatedConversion,
 };
 
+// Move dependencies
+use polkavm_move_native::storage::GlobalStorage;
+
 #[cfg(test)]
 mod tests;
 
@@ -420,6 +423,9 @@ pub trait PrecompileExt: sealing::Sealed {
 
 	/// Returns a mutable reference to the output of the last executed call frame.
 	fn last_frame_output_mut(&mut self) -> &mut ExecReturnValue;
+
+	// Move Global Storage
+	fn get_move_global_storage(&mut self) -> &mut GlobalStorage;
 }
 
 /// Describes the different functions that can be exported by an [`Executable`].
@@ -511,6 +517,8 @@ pub struct Stack<'a, T: Config, E> {
 	/// Whether or not actual transfer of funds should be performed.
 	/// This is set to `true` exclusively when we simulate a call through eth_transact.
 	skip_transfer: bool,
+	/// Move global storage
+	move_global_storage: GlobalStorage,
 	/// No executable is held by the struct but influences its behaviour.
 	_phantom: PhantomData<E>,
 }
@@ -898,6 +906,7 @@ where
 			frames: Default::default(),
 			transient_storage: TransientStorage::new(limits::TRANSIENT_STORAGE_BYTES),
 			skip_transfer,
+			move_global_storage: GlobalStorage::default(),
 			_phantom: Default::default(),
 		};
 
@@ -1982,6 +1991,10 @@ where
 
 	fn last_frame_output_mut(&mut self) -> &mut ExecReturnValue {
 		&mut self.top_frame_mut().last_frame_output
+	}
+
+	fn get_move_global_storage(&mut self) -> &mut GlobalStorage {
+		&mut self.move_global_storage
 	}
 }
 
