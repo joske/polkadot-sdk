@@ -39,6 +39,11 @@ rlp = { workspace = true }
 scale-info = { features = ["derive"], workspace = true }
 serde = { features = ["alloc", "derive"], workspace = true, default-features = false }
 
+# Move dependencies
+polkavm_move_native = { git = "https://github.com/eigerco/polkavm-move", package = "polkavm-move-native", defaut-features = false, features = [ "host" ]}
+sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
+
 # Polkadot SDK Dependencies
 bn = { workspace = true }
 frame-benchmarking = { optional = true, workspace = true }
