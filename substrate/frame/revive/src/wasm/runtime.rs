@@ -37,9 +37,18 @@ use frame_support::{
 };
 use pallet_revive_proc_macro::define_env;
 use pallet_revive_uapi::{CallFlags, ReturnErrorCode, ReturnFlags, StorageFlags};
+
+// Move imports
+use polkavm::MemoryAccessError;
+use polkavm_move_native::{
+	host::MemAllocator,
+	types::{MoveAddress, MoveSigner, MoveType, TypeDesc},
+};
+use sha2::Digest;
 use sp_core::{H160, H256, U256};
 use sp_io::hashing::{blake2_128, blake2_256, keccak_256};
 use sp_runtime::{DispatchError, RuntimeDebug};
+use std::mem::MaybeUninit;
 
 type CallOf<T> = <T as frame_system::Config>::RuntimeCall;
 
@@ -611,6 +620,7 @@ pub struct Runtime<'a, E: Ext, M: ?Sized> {
 	ext: &'a mut E,
 	input_data: Option<Vec<u8>>,
 	chain_extension: Option<Box<<E::T as Config>::ChainExtension>>,
+	move_allocator: MemAllocator,
 	_phantom_data: PhantomData<M>,
 }
 
@@ -644,7 +654,7 @@ impl<'a, E: Ext, M: PolkaVmInstance<E::T>> Runtime<'a, E, M> {
 					return Some(Ok(ExecReturnValue {
 						flags: ReturnFlags::empty(),
 						data: Vec::new(),
-					}))
+					}));
 				}
 				let Some(syscall_symbol) = module.imports().get(idx) else {
 					return Some(Err(<Error<E::T>>::InvalidSyscall.into()));
@@ -674,6 +684,7 @@ impl<'a, E: Ext, M: ?Sized + Memory<E::T>> Runtime<'a, E, M> {
 			ext,
 			input_data: Some(input_data),
 			chain_extension: Some(Box::new(Default::default())),
+			move_allocator: MemAllocator::default(),
 			_phantom_data: Default::default(),
 		}
 	}
@@ -1372,6 +1383,7 @@ pub mod env {
 		let Some(input) = self.input_data.as_ref() else {
 			return Err(Error::<E::T>::InputForwarded.into());
 		};
+		log::debug!("call_data_copy input: {input:x?}");
 
 		let start = offset as usize;
 		if start >= input.len() {
@@ -1402,6 +1414,7 @@ pub mod env {
 		let Some(input) = self.input_data.as_ref() else {
 			return Err(Error::<E::T>::InputForwarded.into());
 		};
+		log::debug!("call_data_load input: {input:x?}");
 
 		let mut data = [0; 32];
 		let start = offset as usize;
@@ -1413,6 +1426,7 @@ pub mod env {
 			data.reverse();
 			data // Solidity expects right-padded data
 		};
+		log::debug!("call_data_load data: {data:x?}");
 
 		self.write_fixed_sandbox_output(memory, out_ptr, &data, false, already_charged)?;
 
@@ -2171,4 +2185,340 @@ pub mod env {
 			already_charged,
 		)?)
 	}
+
+	// Move syscalls
+	fn hex_dump(&mut self, memory: &mut M) -> Result<(), TrapReason> {
+		hex_dump_internal(memory);
+		Ok(())
+	}
+
+	fn debug_print(
+		&mut self,
+		memory: &mut M,
+		ptr_to_type: u32,
+		ptr_to_data: u32,
+	) -> Result<u32, TrapReason> {
+		// self.charge_gas(RuntimeCosts::Exists)?;
+		let mut move_type_string = "Unknown".to_string();
+		let move_type: Result<MoveType, TrapReason> = copy_from_guest(memory, ptr_to_type);
+		// for some reason, the type is stored in RO memory, which we can't read when dynamic paging
+		// is enabled
+		if let Ok(move_type) = move_type {
+			move_type_string = move_type.to_string();
+			match move_type.type_desc {
+				TypeDesc::Bool | TypeDesc::U8 => {
+					let move_value: u8 = copy_from_guest(memory, ptr_to_data)?;
+					log::debug!("debug_print called. type ptr: 0x{ptr_to_type:X} Data ptr: 0x{ptr_to_data:X}, type: {move_type_string:?}, value: 0x{move_value}");
+				},
+				TypeDesc::U16 | TypeDesc::U32 => {
+					let move_value: u32 = copy_from_guest(memory, ptr_to_data)?;
+					log::debug!("debug_print called. type ptr: 0x{ptr_to_type:X} Data ptr: 0x{ptr_to_data:X}, type: {move_type_string:?}, value: 0x{move_value:x?}");
+				},
+				TypeDesc::Signer => {
+					let move_signer: MoveSigner = copy_from_guest(memory, ptr_to_data)?;
+					log::debug!("debug_print called. type ptr: 0x{ptr_to_type:X} Data ptr: 0x{ptr_to_data:X}, type: {move_type_string:?}, value: {move_signer:?}");
+				},
+				TypeDesc::U64 => {
+					let move_value: u64 = copy_from_guest(memory, ptr_to_data)?;
+					log::debug!("debug_print called. type ptr: 0x{ptr_to_type:X} Data ptr: 0x{ptr_to_data:X}, type: {move_type_string:?}, value: 0x{move_value:x?}");
+				},
+				TypeDesc::Vector => {
+					let vec: MoveByteVector = copy_from_guest(memory, ptr_to_data)?;
+					let len = vec.length as usize;
+					let bytes =
+						copy_bytes_from_guest(memory, vec.ptr as u32, len).expect("failed to copy");
+					let s = String::from_utf8(bytes.clone());
+					if let Ok(s) = s {
+						log::debug!("debug_print called: {s}");
+					} else {
+						log::debug!("debug_print called. type ptr: 0x{ptr_to_type:X} Data ptr: 0x{ptr_to_data:X}, type: {move_type_string:?}, value: {vec:?}, bytes: {bytes:x?}");
+					}
+				},
+				_ => {
+					let move_value: u64 = copy_from_guest(memory, ptr_to_data)?;
+					log::debug!("debug_print called. type ptr: 0x{ptr_to_type:X} Data ptr: 0x{ptr_to_data:X}, type: {move_type_string:?}, value: 0x{move_value:x}");
+				},
+			}
+		} else {
+			let move_value: u32 = copy_from_guest(memory, ptr_to_data)?;
+			log::debug!("debug_print called. type ptr: 0x{ptr_to_type:X} Data ptr: 0x{ptr_to_data:X}, type: {move_type_string:?}, value: {move_value}");
+		}
+		Ok(0)
+	}
+
+	fn move_to(
+		&mut self,
+		memory: &mut M,
+		ptr_to_signer: u32,
+		ptr_to_struct: u32,
+		ptr_to_tag: u32,
+	) -> Result<u32, TrapReason> {
+		// self.charge_gas(RuntimeCosts::Exists)?;
+		let signer_ptr: u32 = copy_from_guest(memory, ptr_to_signer)?;
+		let signer: MoveSigner =
+			copy_from_guest(memory, signer_ptr).expect("failed to copy memory");
+		let tag = memory.read(ptr_to_tag, 32)?;
+		let address = signer.0;
+		let value = from_move_byte_vector(memory, ptr_to_struct).expect("failed to copy struct");
+		log::debug!(
+            "move_to called with address ptr: 0x{ptr_to_signer:X}, value ptr: 0x{ptr_to_struct:X}, address: {address:?}, value: {value:x?}",
+        );
+		self.move_allocator
+			.store_global(address, tag.try_into().expect("aah"), value.to_vec())
+			.expect("failed to store global");
+
+		Ok(0)
+	}
+
+	fn move_from(
+		&mut self,
+		memory: &mut M,
+		ptr_to_signer: u32,
+		remove: u32,
+		ptr_to_tag: u32,
+		is_mut: u32,
+	) -> Result<u32, TrapReason> {
+		// self.charge_gas(RuntimeCosts::Exists)?;
+		let signer: MoveSigner =
+			copy_from_guest(memory, ptr_to_signer).expect("failed to copy memory");
+		let tag = memory.read(ptr_to_tag, 32)?;
+		let tag_slice = tag.try_into().expect("aah");
+		let value = self
+			.move_allocator
+			.load_global(signer.0, tag_slice, remove != 0, is_mut != 0)
+			.expect("failed to retrieve global");
+		let address = to_move_byte_vector(memory, &mut self.move_allocator, value.to_vec())
+			.expect("failed to copy byte vector");
+		log::debug!(
+            "move_from called with address ptr: 0x{ptr_to_signer:X}, address: {address:?}, value: {value:x?}, remove: {remove}, is_mut: {is_mut}",
+        );
+		Ok(address)
+	}
+
+	fn exists(&mut self, memory: &mut M, signer_ptr: u32, tag_ptr: u32) -> Result<u32, TrapReason> {
+		// self.charge_gas(RuntimeCosts::Exists)?;
+		log::debug!("exists: ptr: {signer_ptr:x} tag: {tag_ptr:x}");
+		let tag = memory.read(tag_ptr, 32)?;
+		let signer: MoveAddress =
+			copy_from_guest(memory, signer_ptr).expect("failed to copy memory");
+		log::debug!("exists: tag: {tag:x?} signer: {signer:x?}");
+		let result = self
+			.move_allocator
+			.exists(signer, tag.as_slice().try_into().expect("tag must be 32 bytes"))
+			.expect("failed to call exists");
+		Ok(result as u32)
+	}
+
+	fn release(
+		&mut self,
+		memory: &mut M,
+		ptr_to_signer: u32,
+		ptr_to_struct: u32,
+		ptr_to_tag: u32,
+	) -> Result<u32, TrapReason> {
+		// self.charge_gas(RuntimeCosts::Exists)?;
+		let signer: MoveSigner =
+			copy_from_guest(memory, ptr_to_signer).expect("failed to copy memory");
+		let tag = memory.read(ptr_to_tag, 32)?;
+		let address = signer.0;
+		let value = from_move_byte_vector(memory, ptr_to_struct).expect("failed to copy struct");
+		log::debug!(
+            "release called with address ptr: 0x{ptr_to_signer:X}, value ptr: 0x{ptr_to_struct:X}, address: {address:?}, value: {value:x?}",
+        );
+		let tag_slice = tag.try_into().expect("aah");
+		self.move_allocator
+			.update(address, tag_slice, value.to_vec())
+			.expect("failed to store global");
+		self.move_allocator.release(address, tag_slice);
+		Ok(0)
+	}
+
+	fn hash_sha2_256(&mut self, memory: &mut M, ptr_to_buf: u32) -> Result<u32, TrapReason> {
+		// self.charge_gas(RuntimeCosts::Exists)?;
+		let bytes = from_move_byte_vector(memory, ptr_to_buf)?;
+		log::debug!("hash_sha2_256 called with type: ptr: 0x{ptr_to_buf:X}");
+		log::debug!("bytes: {bytes:?}");
+		let digest = sha2::Sha256::digest(&bytes);
+		log::debug!("hash_sha2_256 called with {} bytes, digest: {digest:X?}", bytes.len(),);
+		let address = to_move_byte_vector(memory, &mut self.move_allocator, digest.to_vec())?;
+		log::debug!("Allocated address for digest: 0x{address:X}");
+		Ok(address)
+	}
+
+	fn hash_sha3_256(&mut self, memory: &mut M, ptr_to_buf: u32) -> Result<u32, TrapReason> {
+		// self.charge_gas(RuntimeCosts::Exists)?;
+		let bytes = from_move_byte_vector(memory, ptr_to_buf)?;
+		log::debug!("hash_sha3_256 called with type: ptr: 0x{ptr_to_buf:X}");
+		log::debug!("bytes: {bytes:?}");
+		let digest = sha3::Sha3_256::digest(&bytes);
+		log::debug!("hash_sha3_256 called with {} bytes, digest: {digest:X?}", bytes.len(),);
+		let address = to_move_byte_vector(memory, &mut self.move_allocator, digest.to_vec())?;
+		log::debug!("Allocated address for digest: 0x{address:X}");
+		Ok(address)
+	}
+}
+
+fn copy_from_guest<T: Copy + Sized, M: Memory<C>, C: Config>(
+	memory: &mut M,
+	ptr: u32,
+) -> Result<T, TrapReason> {
+	// self.charge_gas(RuntimeCosts::Exists)?;
+	let mut uninit = MaybeUninit::<T>::uninit();
+	let signer = unsafe {
+		let dst_bytes: &mut [u8] =
+			core::slice::from_raw_parts_mut(uninit.as_mut_ptr() as *mut u8, size_of::<T>());
+		log::trace!("Reading {} bytes from guest memory at address 0x{:X}", size_of::<T>(), ptr);
+		memory.read_into_buf(ptr, dst_bytes)?;
+		log::trace!("read: {dst_bytes:x?}");
+		let signer: T = uninit.assume_init();
+		signer
+	};
+	Ok(signer)
+}
+
+fn copy_to_guest<T: Sized + Copy, M: Memory<C>, C: Config>(
+	memory: &mut M,
+	allocator: &mut MemAllocator,
+	value: &T,
+) -> Result<u32, TrapReason> {
+	log::trace!("Copying value of type {} to guest memory", core::any::type_name::<T>());
+	let size_to_write = core::mem::size_of::<T>();
+	let address = allocator
+		.alloc(size_to_write, core::mem::align_of::<T>())
+		.expect("failed to allocate");
+
+	// safety: we know we have memory, we just checked
+	let slice =
+		unsafe { core::slice::from_raw_parts((value as *const T) as *const u8, size_to_write) };
+
+	memory.write(address, slice)?;
+
+	Ok(address)
+}
+
+fn from_move_byte_vector<M: Memory<C>, C: Config>(
+	memory: &mut M,
+	ptr_to_buf: u32,
+) -> Result<Vec<u8>, TrapReason> {
+	let move_byte_vec: MoveByteVector =
+		copy_from_guest(memory, ptr_to_buf).expect("failed to copy bytes");
+	log::debug!("move_byte_vec: {move_byte_vec:?}");
+	let len = move_byte_vec.length as usize;
+	let bytes =
+		copy_bytes_from_guest(memory, move_byte_vec.ptr as u32, len).expect("failed to copy bytes");
+	Ok(bytes)
+}
+
+use polkavm_move_native::types::MoveByteVector;
+
+fn to_move_byte_vector<M: Memory<C>, C: Config>(
+	memory: &mut M,
+	allocator: &mut MemAllocator,
+	bytes: Vec<u8>,
+) -> Result<u32, TrapReason> {
+	let len = bytes.len();
+	let data_ptr =
+		copy_bytes_to_guest(memory, allocator, bytes.as_slice()).expect("failed to copy bytes");
+	log::debug!("Data copied to guest memory at address: 0x{data_ptr:X}, length: {len}",);
+	let move_byte_vec =
+		MoveByteVector { ptr: data_ptr as *mut u8, capacity: len as u64, length: len as u64 };
+	log::debug!("move_byte_vec: {move_byte_vec:?}");
+	Ok(copy_to_guest(memory, allocator, &move_byte_vec).expect("failed to copy bytes"))
+}
+
+fn copy_bytes_to_guest<M: Memory<C>, C: Config>(
+	memory: &mut M,
+	allocator: &mut MemAllocator,
+	bytes: &[u8],
+) -> Result<u32, TrapReason> {
+	let size = bytes.len();
+	let align = core::mem::align_of::<u8>(); // usually 1, but explicit for clarity
+
+	log::trace!("Copying {size} bytes to guest memory with alignment {align}");
+
+	let address = allocator.alloc(size, align).expect("failed to allocate");
+
+	memory.write(address, bytes)?;
+
+	Ok(address)
+}
+
+fn copy_bytes_from_guest<M: Memory<C>, C: Config>(
+	memory: &mut M,
+	address: u32,
+	length: usize,
+) -> Result<std::vec::Vec<u8>, MemoryAccessError> {
+	log::trace!("Copying {length} bytes from guest memory at address 0x{address:X}");
+	let uninit: std::boxed::Box<[MaybeUninit<u8>]> = std::boxed::Box::new_uninit_slice(length);
+
+	let buf = unsafe {
+		let mut buf = uninit.assume_init();
+		memory.read_into_buf(address, &mut buf).expect("faild to read memory");
+		buf
+	};
+	log::trace!("read: {buf:x?}");
+
+	// Step 3: create a Vec<u8> from the slice
+	Ok(buf.to_vec())
+}
+
+fn hex_dump_internal<M: Memory<C>, C: Config>(memory: &mut M) {
+	let ro_base = 0x10000u32;
+	let ro = memory.read(ro_base, 256).unwrap_or_else(|_| vec![]);
+	print_mem(ro, ro_base as usize, " RO  ");
+	let stack_base = 0xfffcf940;
+	let stack_end = 0xfffd0000;
+	println!(
+		"Stack base: 0x{stack_base:X}, Stack end: 0x{stack_end:X}: len: {}",
+		stack_end - stack_base
+	);
+	let stack = memory.read(stack_base, stack_end - stack_base).unwrap_or_else(|_| vec![]);
+	print_mem(stack, stack_base as usize, " STACK ");
+	let heap_base = 0x30500;
+	let heap = memory.read(heap_base, 256).unwrap_or_else(|_| vec![]);
+	print_mem(heap, heap_base as usize, " HEAP ");
+	let address = 0xfffe0000;
+	let length = 100;
+	let aux = memory.read(address, length).unwrap_or_else(|_| vec![]);
+	print_mem(aux, address as usize, " AUX ");
+}
+
+fn print_mem(mem: Vec<u8>, base: usize, label: &str) {
+	let start_address = 0usize;
+	let mut offset = 0;
+
+	println!("{label:-^78}");
+	while offset < mem.len() {
+		// Print the address
+		print!("{:08x}  ", base + start_address + offset);
+
+		// Print hex values
+		for i in 0..16 {
+			if offset + i < mem.len() {
+				print!("{:02x} ", mem[offset + i]);
+			} else {
+				print!("   ");
+			}
+			if i == 7 {
+				print!(" "); // extra space between 8-byte halves
+			}
+		}
+
+		print!(" |");
+
+		// Print ASCII representation
+		for i in 0..16 {
+			if offset + i < mem.len() {
+				let byte = mem[offset + i];
+				let ch = if byte.is_ascii_graphic() || byte == b' ' { byte as char } else { '.' };
+				print!("{ch}");
+			} else {
+				print!(" ");
+			}
+		}
+
+		println!("|");
+		offset += 16;
+	}
+	println!("{:-<78}", "");
 }

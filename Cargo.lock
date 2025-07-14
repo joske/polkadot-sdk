@@ -2041,6 +2041,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "borsh"
+version = "1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad8646f98db542e39fc66e68a20b2144f6a732636df7c2354e74645faaa433ce"
+dependencies = [
+ "borsh-derive",
+ "cfg_aliases 0.2.1",
+]
+
+[[package]]
+name = "borsh-derive"
+version = "1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdd1d3c0c2f5833f22386f252fe8ed005c7f59fdcddeef025c01b4c3b9fd9ac3"
+dependencies = [
+ "once_cell",
+ "proc-macro-crate 3.1.0",
+ "proc-macro2 1.0.93",
+ "quote 1.0.38",
+ "syn 2.0.98",
+]
+
+[[package]]
 name = "bounded-collections"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6027,6 +6050,12 @@ dependencies = [
  "scale-info",
  "uint 0.10.0",
 ]
+
+[[package]]
+name = "ethnum"
+version = "1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca81e6b4777c89fd810c25a4be2b1bd93ea034fbe58e6a75216a34c6b82c539b"
 
 [[package]]
 name = "event-listener"
@@ -12808,6 +12837,7 @@ dependencies = [
  "paste",
  "polkavm 0.21.0",
  "polkavm-common 0.21.0",
+ "polkavm-move-native",
  "pretty_assertions",
  "rand 0.8.5",
  "rand_pcg",
@@ -12817,6 +12847,8 @@ dependencies = [
  "secp256k1 0.28.2",
  "serde",
  "serde_json",
+ "sha2 0.10.8",
+ "sha3 0.10.8",
  "sp-api 36.0.1",
  "sp-arithmetic 26.1.0",
  "sp-consensus-aura",
@@ -16563,6 +16595,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "polkavm"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa028f713d0613f0f08b8b3367402cb859218854f6b96fcbe39a501862894d6f"
+dependencies = [
+ "libc",
+ "log",
+ "polkavm-assembler 0.26.0",
+ "polkavm-common 0.26.0",
+ "polkavm-linux-raw 0.26.0",
+]
+
+[[package]]
 name = "polkavm-assembler"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16585,6 +16630,15 @@ name = "polkavm-assembler"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f512bc80cb10439391a7c13a9eb2d37cf66b7305e7df0a06d662eff4f5b07625"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "polkavm-assembler"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4859a29e1f4ad64610c4bc2bfc40bb9a535068a034933a5b56b5e7a0febf105a"
 dependencies = [
  "log",
 ]
@@ -16617,6 +16671,16 @@ dependencies = [
  "blake3",
  "log",
  "polkavm-assembler 0.21.0",
+]
+
+[[package]]
+name = "polkavm-common"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49a5794b695626ba70d29e66e3f4f4835767452a6723f3a0bc20884b07088fe8"
+dependencies = [
+ "log",
+ "polkavm-assembler 0.26.0",
 ]
 
 [[package]]
@@ -16761,6 +16825,23 @@ name = "polkavm-linux-raw"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be6cd1d48c5e7814d287a3e12a339386a5dfa2f3ac72f932335f4cf56467f1b3"
+
+[[package]]
+name = "polkavm-linux-raw"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28919f542476f4158cc71e6c072b1051f38f4b514253594ac3ad80e3c0211fc8"
+
+[[package]]
+name = "polkavm-move-native"
+version = "0.1.0"
+source = "git+https://github.com/eigerco/polkavm-move#67d74d37c9c8e3a8fa369442baba069b184d150e"
+dependencies = [
+ "borsh",
+ "ethnum",
+ "log",
+ "polkavm 0.26.0",
+]
 
 [[package]]
 name = "polling"
