@@ -2048,6 +2048,7 @@ checksum = "ad8646f98db542e39fc66e68a20b2144f6a732636df7c2354e74645faaa433ce"
 dependencies = [
  "borsh-derive",
  "cfg_aliases 0.2.1",
+ "hashbrown 0.15.2",
 ]
 
 [[package]]
@@ -7563,6 +7564,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf151400ff0baff5465007dd2f3e717f3fe502074ca563069ce3a6629d07b289"
 dependencies = [
  "allocator-api2",
+ "equivalent",
  "foldhash",
  "serde",
 ]
@@ -16835,7 +16837,7 @@ checksum = "28919f542476f4158cc71e6c072b1051f38f4b514253594ac3ad80e3c0211fc8"
 [[package]]
 name = "polkavm-move-native"
 version = "0.1.0"
-source = "git+https://github.com/eigerco/polkavm-move#55ca04eba26b9f60c1c8346aa1b1458d5b1a15c5"
+source = "git+https://github.com/eigerco/polkavm-move#7cc6ea8a60afd8274079c365cd729383f0d7188a"
 dependencies = [
  "borsh",
  "ethnum",

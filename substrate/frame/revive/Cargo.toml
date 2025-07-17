@@ -41,8 +41,8 @@ serde = { features = ["alloc", "derive"], workspace = true, default-features = f
 
 # Move dependencies
 polkavm_move_native = { git = "https://github.com/eigerco/polkavm-move", package = "polkavm-move-native", features = [ "host" ]}
-sha2 = "0.10"
-sha3 = "0.10"
+sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
 
 # Polkadot SDK Dependencies
 bn = { workspace = true }
