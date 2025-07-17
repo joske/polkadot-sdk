@@ -49,7 +49,10 @@ use sha2::Digest;
 use sp_core::{H160, H256, U256};
 use sp_io::hashing::{blake2_128, blake2_256, keccak_256};
 use sp_runtime::{DispatchError, RuntimeDebug};
-use std::mem::MaybeUninit;
+use core::mem::MaybeUninit;
+use alloc::string::String;
+use crate::alloc::string::ToString;
+
 
 type CallOf<T> = <T as frame_system::Config>::RuntimeCall;
 
@@ -2188,11 +2191,6 @@ pub mod env {
 	}
 
 	// Move syscalls
-	fn hex_dump(&mut self, memory: &mut M) -> Result<(), TrapReason> {
-		hex_dump_internal(memory);
-		Ok(())
-	}
-
 	fn debug_print(
 		&mut self,
 		memory: &mut M,
@@ -2452,9 +2450,9 @@ fn copy_bytes_from_guest<M: Memory<C>, C: Config>(
 	memory: &mut M,
 	address: u32,
 	length: usize,
-) -> Result<std::vec::Vec<u8>, MemoryAccessError> {
+) -> Result<Vec<u8>, MemoryAccessError> {
 	log::trace!("Copying {length} bytes from guest memory at address 0x{address:X}");
-	let uninit: std::boxed::Box<[MaybeUninit<u8>]> = std::boxed::Box::new_uninit_slice(length);
+	let uninit: alloc::boxed::Box<[MaybeUninit<u8>]> = alloc::boxed::Box::new_uninit_slice(length);
 
 	let buf = unsafe {
 		let mut buf = uninit.assume_init();
@@ -2465,65 +2463,4 @@ fn copy_bytes_from_guest<M: Memory<C>, C: Config>(
 
 	// Step 3: create a Vec<u8> from the slice
 	Ok(buf.to_vec())
-}
-
-fn hex_dump_internal<M: Memory<C>, C: Config>(memory: &mut M) {
-	let ro_base = 0x10000u32;
-	let ro = memory.read(ro_base, 256).unwrap_or_else(|_| vec![]);
-	print_mem(ro, ro_base as usize, " RO  ");
-	let stack_base = 0xfffcf940;
-	let stack_end = 0xfffd0000;
-	println!(
-		"Stack base: 0x{stack_base:X}, Stack end: 0x{stack_end:X}: len: {}",
-		stack_end - stack_base
-	);
-	let stack = memory.read(stack_base, stack_end - stack_base).unwrap_or_else(|_| vec![]);
-	print_mem(stack, stack_base as usize, " STACK ");
-	let heap_base = 0x30500;
-	let heap = memory.read(heap_base, 256).unwrap_or_else(|_| vec![]);
-	print_mem(heap, heap_base as usize, " HEAP ");
-	let address = 0xfffe0000;
-	let length = 100;
-	let aux = memory.read(address, length).unwrap_or_else(|_| vec![]);
-	print_mem(aux, address as usize, " AUX ");
-}
-
-fn print_mem(mem: Vec<u8>, base: usize, label: &str) {
-	let start_address = 0usize;
-	let mut offset = 0;
-
-	println!("{label:-^78}");
-	while offset < mem.len() {
-		// Print the address
-		print!("{:08x}  ", base + start_address + offset);
-
-		// Print hex values
-		for i in 0..16 {
-			if offset + i < mem.len() {
-				print!("{:02x} ", mem[offset + i]);
-			} else {
-				print!("   ");
-			}
-			if i == 7 {
-				print!(" "); // extra space between 8-byte halves
-			}
-		}
-
-		print!(" |");
-
-		// Print ASCII representation
-		for i in 0..16 {
-			if offset + i < mem.len() {
-				let byte = mem[offset + i];
-				let ch = if byte.is_ascii_graphic() || byte == b' ' { byte as char } else { '.' };
-				print!("{ch}");
-			} else {
-				print!(" ");
-			}
-		}
-
-		println!("|");
-		offset += 16;
-	}
-	println!("{:-<78}", "");
 }

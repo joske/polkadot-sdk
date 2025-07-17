@@ -629,10 +629,6 @@ impl HostFn for HostFnImpl {
 	}
 
 	// Move syscalls
-    fn hex_dump() {
-        unsafe { sys::hex_dump() };
-    }
-
     fn debug_print(ptr_to_type: u32, address_ptr: u32) {
         unsafe { sys::debug_print(ptr_to_type, address_ptr) };
     }

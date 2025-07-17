@@ -723,7 +723,6 @@ pub trait HostFn: private::Sealed {
 	fn xcm_send(dest: &[u8], msg: &[u8], output: &mut [u8; 32]) -> Result;
 
 	// Move syscalls
-	fn hex_dump();
 	fn debug_print(ptr_to_type: u32, address_ptr: u32);
 	fn exists(address_ptr: u32, ptr_to_tag: u32) -> u32;
 	fn move_to(ptr_to_signer: u32, ptr_to_struct: u32, ptr_to_tag: u32) -> u32;
