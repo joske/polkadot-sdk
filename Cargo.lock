@@ -16835,7 +16835,7 @@ checksum = "28919f542476f4158cc71e6c072b1051f38f4b514253594ac3ad80e3c0211fc8"
 [[package]]
 name = "polkavm-move-native"
 version = "0.1.0"
-source = "git+https://github.com/eigerco/polkavm-move#67d74d37c9c8e3a8fa369442baba069b184d150e"
+source = "git+https://github.com/eigerco/polkavm-move#55ca04eba26b9f60c1c8346aa1b1458d5b1a15c5"
 dependencies = [
  "borsh",
  "ethnum",

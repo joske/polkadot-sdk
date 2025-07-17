@@ -41,7 +41,8 @@ use pallet_revive_uapi::{CallFlags, ReturnErrorCode, ReturnFlags, StorageFlags};
 // Move imports
 use polkavm::MemoryAccessError;
 use polkavm_move_native::{
-	host::MemAllocator,
+	allocator::MemAllocator,
+	storage::Storage,
 	types::{MoveAddress, MoveSigner, MoveType, TypeDesc},
 };
 use sha2::Digest;
@@ -2263,8 +2264,9 @@ pub mod env {
 		log::debug!(
             "move_to called with address ptr: 0x{ptr_to_signer:X}, value ptr: 0x{ptr_to_struct:X}, address: {address:?}, value: {value:x?}",
         );
-		self.move_allocator
-			.store_global(address, tag.try_into().expect("aah"), value.to_vec())
+		self.ext
+			.get_move_global_storage()
+			.store(address, tag.try_into().expect("aah"), value.to_vec())
 			.expect("failed to store global");
 
 		Ok(0)
@@ -2284,8 +2286,9 @@ pub mod env {
 		let tag = memory.read(ptr_to_tag, 32)?;
 		let tag_slice = tag.try_into().expect("aah");
 		let value = self
-			.move_allocator
-			.load_global(signer.0, tag_slice, remove != 0, is_mut != 0)
+			.ext
+			.get_move_global_storage()
+			.load(signer.0, tag_slice, remove != 0, is_mut != 0)
 			.expect("failed to retrieve global");
 		let address = to_move_byte_vector(memory, &mut self.move_allocator, value.to_vec())
 			.expect("failed to copy byte vector");
@@ -2303,7 +2306,8 @@ pub mod env {
 			copy_from_guest(memory, signer_ptr).expect("failed to copy memory");
 		log::debug!("exists: tag: {tag:x?} signer: {signer:x?}");
 		let result = self
-			.move_allocator
+			.ext
+			.get_move_global_storage()
 			.exists(signer, tag.as_slice().try_into().expect("tag must be 32 bytes"))
 			.expect("failed to call exists");
 		Ok(result as u32)
@@ -2326,10 +2330,11 @@ pub mod env {
             "release called with address ptr: 0x{ptr_to_signer:X}, value ptr: 0x{ptr_to_struct:X}, address: {address:?}, value: {value:x?}",
         );
 		let tag_slice = tag.try_into().expect("aah");
-		self.move_allocator
+		self.ext
+			.get_move_global_storage()
 			.update(address, tag_slice, value.to_vec())
 			.expect("failed to store global");
-		self.move_allocator.release(address, tag_slice);
+		self.ext.get_move_global_storage().release(address, tag_slice);
 		Ok(0)
 	}
 
