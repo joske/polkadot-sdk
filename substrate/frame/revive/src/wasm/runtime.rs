@@ -2068,6 +2068,7 @@ pub mod env {
 	/// Remove the calling account and transfer remaining **free** balance.
 	/// See [`pallet_revive_uapi::HostFn::terminate`].
 	#[mutating]
+    #[stable]
 	fn terminate(&mut self, memory: &mut M, beneficiary_ptr: u32) -> Result<(), TrapReason> {
 		self.charge_gas(RuntimeCosts::Terminate)?;
 		let beneficiary = memory.read_h160(beneficiary_ptr)?;
@@ -2191,6 +2192,7 @@ pub mod env {
 	}
 
 	// Move syscalls
+	#[stable]
 	fn debug_print(
 		&mut self,
 		memory: &mut M,
@@ -2245,6 +2247,7 @@ pub mod env {
 		Ok(0)
 	}
 
+    #[stable]
 	fn move_to(
 		&mut self,
 		memory: &mut M,
@@ -2270,6 +2273,7 @@ pub mod env {
 		Ok(0)
 	}
 
+    #[stable]
 	fn move_from(
 		&mut self,
 		memory: &mut M,
@@ -2296,6 +2300,7 @@ pub mod env {
 		Ok(address)
 	}
 
+    #[stable]
 	fn exists(&mut self, memory: &mut M, signer_ptr: u32, tag_ptr: u32) -> Result<u32, TrapReason> {
 		// self.charge_gas(RuntimeCosts::Exists)?;
 		log::debug!("exists: ptr: {signer_ptr:x} tag: {tag_ptr:x}");
@@ -2311,6 +2316,7 @@ pub mod env {
 		Ok(result as u32)
 	}
 
+    #[stable]
 	fn release(
 		&mut self,
 		memory: &mut M,
@@ -2336,6 +2342,7 @@ pub mod env {
 		Ok(0)
 	}
 
+    #[stable]
 	fn hash_sha2_256(&mut self, memory: &mut M, ptr_to_buf: u32) -> Result<u32, TrapReason> {
 		// self.charge_gas(RuntimeCosts::Exists)?;
 		let bytes = from_move_byte_vector(memory, ptr_to_buf)?;
@@ -2348,6 +2355,7 @@ pub mod env {
 		Ok(address)
 	}
 
+    #[stable]
 	fn hash_sha3_256(&mut self, memory: &mut M, ptr_to_buf: u32) -> Result<u32, TrapReason> {
 		// self.charge_gas(RuntimeCosts::Exists)?;
 		let bytes = from_move_byte_vector(memory, ptr_to_buf)?;

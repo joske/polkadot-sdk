@@ -151,6 +151,7 @@ pub mod code {
 			};
 			if !available_syscalls.contains(&import.as_bytes()) {
 				log::debug!(target: LOG_TARGET, "Program references unknown syscall: {}", import);
+				log::debug!(target: LOG_TARGET, "Available syscalls: {:?}", available_syscalls);
 				Err(Error::<T>::CodeRejected)?;
 			}
 		}
