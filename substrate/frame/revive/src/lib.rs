@@ -36,6 +36,9 @@ mod tests;
 mod transient_storage;
 mod vm;
 
+// move
+mod move_storage;
+
 pub mod evm;
 pub mod migrations;
 pub mod precompiles;
@@ -84,6 +87,9 @@ use sp_runtime::{
 	traits::{BadOrigin, Bounded, Convert, Dispatchable, Saturating},
 	AccountId32, DispatchError,
 };
+
+// Move imports
+use crate::move_storage::{GlobalResourceEntry, MoveAddress, StructTagHash};
 
 pub use crate::{
 	address::{
@@ -524,6 +530,17 @@ pub mod pallet {
 	/// use it with this pallet.
 	#[pallet::storage]
 	pub(crate) type OriginalAccount<T: Config> = StorageMap<_, Identity, H160, AccountId32>;
+
+	/// Move global storage
+	#[pallet::storage]
+	pub type MoveGlobalStorage<T: Config> = StorageDoubleMap<
+		_,
+		Blake2_128Concat,
+		MoveAddress,
+		Blake2_128Concat,
+		StructTagHash,
+		GlobalResourceEntry,
+	>;
 
 	#[pallet::genesis_config]
 	#[derive(frame_support::DefaultNoBound)]

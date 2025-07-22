@@ -36,13 +36,15 @@ use pallet_revive_proc_macro::define_env;
 use pallet_revive_uapi::{CallFlags, ReturnErrorCode, ReturnFlags, StorageFlags};
 
 // Move imports
-use crate::alloc::string::ToString;
+use crate::{
+	alloc::string::ToString,
+	move_storage::{exists, load, release, store, update},
+};
 use alloc::string::String;
 use core::mem::MaybeUninit;
 use polkavm::MemoryAccessError;
 use polkavm_move_native::{
 	allocator::MemAllocator,
-	storage::Storage,
 	types::{MoveAddress, MoveSigner, MoveType, TypeDesc},
 };
 use sha2::Digest;
@@ -2136,6 +2138,7 @@ pub mod env {
 	/// Retrieves the account id for a specified contract address.
 	///
 	/// See [`pallet_revive_uapi::HostFn::to_account_id`].
+	#[stable]
 	fn to_account_id(
 		&mut self,
 		memory: &mut M,
@@ -2223,16 +2226,14 @@ pub mod env {
 		let signer: MoveSigner =
 			copy_from_guest(memory, signer_ptr).expect("failed to copy memory");
 		let tag = memory.read(ptr_to_tag, 32)?;
+		let tag_slice = tag.try_into().expect("expected 32 bytes");
 		let address = signer.0;
 		let value = from_move_byte_vector(memory, ptr_to_struct).expect("failed to copy struct");
 		log::debug!(target: LOG_TARGET,
-			"move_to called with address ptr: 0x{ptr_to_signer:X}, value ptr: 0x{ptr_to_struct:X}, address: {address:?}, value: {value:x?}",
+			"move_to called with address ptr: 0x{ptr_to_signer:X}, value ptr: 0x{ptr_to_struct:X}, address: {address:X?}, value: {value:x?}",
 		);
-		self.ext
-			.get_move_global_storage()
-			.store(address, tag.try_into().expect("aah"), value.to_vec())
-			.expect("failed to store global");
 
+		store::<E::T>(address.0, tag_slice, value.to_vec());
 		Ok(0)
 	}
 
@@ -2249,17 +2250,15 @@ pub mod env {
 		let signer: MoveSigner =
 			copy_from_guest(memory, ptr_to_signer).expect("failed to copy memory");
 		let tag = memory.read(ptr_to_tag, 32)?;
-		let tag_slice = tag.try_into().expect("aah");
-		let value = self
-			.ext
-			.get_move_global_storage()
-			.load(signer.0, tag_slice, remove != 0, is_mut != 0)
-			.expect("failed to retrieve global");
+		let tag_slice = tag.try_into().expect("expected 32 bytes");
+
+		let value = load::<E::T>(signer.0 .0, tag_slice, remove != 0, is_mut != 0);
 		let address = to_move_byte_vector(memory, &mut self.move_allocator, value.to_vec())
 			.expect("failed to copy byte vector");
 		log::debug!(target: LOG_TARGET,
-			"move_from called with address ptr: 0x{ptr_to_signer:X}, address: {address:?}, value: {value:x?}, remove: {remove}, is_mut: {is_mut}",
+			"move_from called with address ptr: 0x{ptr_to_signer:X}, address: {address:X?}, value: {value:x?}, remove: {remove}, is_mut: {is_mut}",
 		);
+
 		Ok(address)
 	}
 
@@ -2271,11 +2270,8 @@ pub mod env {
 		let signer: MoveAddress =
 			copy_from_guest(memory, signer_ptr).expect("failed to copy memory");
 		log::debug!(target: LOG_TARGET, "exists: tag: {tag:x?} signer: {signer:x?}");
-		let result = self
-			.ext
-			.get_move_global_storage()
-			.exists(signer, tag.as_slice().try_into().expect("tag must be 32 bytes"))
-			.expect("failed to call exists");
+		let tag_slice = tag.try_into().expect("expected 32 bytes");
+		let result = exists::<E::T>(signer.0, tag_slice);
 		Ok(result as u32)
 	}
 
@@ -2294,14 +2290,11 @@ pub mod env {
 		let address = signer.0;
 		let value = from_move_byte_vector(memory, ptr_to_struct).expect("failed to copy struct");
 		log::debug!(target: LOG_TARGET,
-			"release called with address ptr: 0x{ptr_to_signer:X}, value ptr: 0x{ptr_to_struct:X}, address: {address:?}, value: {value:x?}",
+			"release called with address ptr: 0x{ptr_to_signer:X}, value ptr: 0x{ptr_to_struct:X}, address: {address:X?}, value: {value:x?}",
 		);
-		let tag_slice = tag.try_into().expect("aah");
-		self.ext
-			.get_move_global_storage()
-			.update(address, tag_slice, value.to_vec())
-			.expect("failed to store global");
-		self.ext.get_move_global_storage().release(address, tag_slice);
+		let tag_slice: [u8; 32] = tag.try_into().expect("expected 32 bytes");
+		update::<E::T>(address.0, tag_slice, value.to_vec());
+		release::<E::T>(address.0, tag_slice);
 		Ok(0)
 	}
 
@@ -2376,7 +2369,7 @@ fn from_move_byte_vector<M: Memory<C>, C: Config>(
 ) -> Result<Vec<u8>, TrapReason> {
 	let move_byte_vec: MoveByteVector =
 		copy_from_guest(memory, ptr_to_buf).expect("failed to copy bytes");
-	log::debug!(target: LOG_TARGET, "move_byte_vec: {move_byte_vec:?}");
+	log::debug!(target: LOG_TARGET, "move_byte_vec: {move_byte_vec:x?}");
 	let len = move_byte_vec.length as usize;
 	let bytes =
 		copy_bytes_from_guest(memory, move_byte_vec.ptr as u32, len).expect("failed to copy bytes");
@@ -2396,7 +2389,7 @@ fn to_move_byte_vector<M: Memory<C>, C: Config>(
 	log::debug!(target: LOG_TARGET, "Data copied to guest memory at address: 0x{data_ptr:X}, length: {len}",);
 	let move_byte_vec =
 		MoveByteVector { ptr: data_ptr as *mut u8, capacity: len as u64, length: len as u64 };
-	log::debug!(target: LOG_TARGET, "move_byte_vec: {move_byte_vec:?}");
+	log::debug!(target: LOG_TARGET, "move_byte_vec: {move_byte_vec:x?}");
 	Ok(copy_to_guest(memory, allocator, &move_byte_vec).expect("failed to copy bytes"))
 }
 
